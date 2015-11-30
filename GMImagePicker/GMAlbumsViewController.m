@@ -41,6 +41,70 @@
 static NSString * const AllPhotosReuseIdentifier = @"AllPhotosCell";
 static NSString * const CollectionCellReuseIdentifier = @"CollectionCell";
 
+- (void)accessGranted
+{
+    self.tableView.tableFooterView = nil;
+    self.imageManager = [[PHCachingImageManager alloc] init];
+    
+    //Fetch PHAssetCollections:
+    PHFetchResult *topLevelUserCollections = [PHCollectionList fetchTopLevelUserCollectionsWithOptions:nil];
+    PHFetchResult *smartAlbums = [PHAssetCollection fetchAssetCollectionsWithType:PHAssetCollectionTypeSmartAlbum subtype:PHAssetCollectionSubtypeAlbumRegular options:nil];
+    self.collectionsFetchResults = @[topLevelUserCollections, smartAlbums];
+    self.collectionsLocalizedTitles = @[NSLocalizedStringFromTableInBundle(@"picker.table.user-albums-header",  @"GMImagePicker", [NSBundle bundleForClass:GMImagePickerController.class], @"Albums"), NSLocalizedStringFromTableInBundle(@"picker.table.smart-albums-header",  @"GMImagePicker", [NSBundle bundleForClass:GMImagePickerController.class], @"Smart Albums")];
+    
+    [self updateFetchResults];
+    
+    //Register for changes
+    [[PHPhotoLibrary sharedPhotoLibrary] registerChangeObserver:self];
+}
+
+- (void)onSettingsButton
+{
+    [[UIApplication sharedApplication] openURL:[NSURL URLWithString: UIApplicationOpenSettingsURLString]];
+}
+
+//TODO: need a wait to customize this
+-(void)authorizationWarning
+{
+    UILabel* label = [UILabel new];
+    label.font = [UIFont boldSystemFontOfSize:17];
+    label.text = @"This app does not have access to your photos or videos";
+    label.textColor = [UIColor grayColor];
+    
+    label.numberOfLines = 0;
+    label.textAlignment = NSTextAlignmentCenter;
+    
+    NSDictionary* attr1 = @{NSForegroundColorAttributeName : [UIColor grayColor]};
+    NSDictionary* attr2 = @{NSForegroundColorAttributeName : [UIColor blueColor]};
+    
+    NSMutableAttributedString *buttonTitle = [[NSMutableAttributedString alloc] initWithString:@"You can enable access in " attributes:attr1];
+    [buttonTitle appendAttributedString:[[NSAttributedString alloc] initWithString:@"Privacy Settings" attributes: attr2]];
+    [buttonTitle appendAttributedString:[[NSAttributedString alloc] initWithString:@"." attributes: attr1]];
+    
+    UIButton* button = [UIButton new];
+    button.titleLabel.numberOfLines = 0;
+    button.titleLabel.textAlignment = NSTextAlignmentCenter;
+    [button setAttributedTitle:buttonTitle forState:UIControlStateNormal];
+    [button addTarget:self action:@selector(onSettingsButton) forControlEvents:UIControlEventTouchUpInside];
+    
+    CGFloat width = self.view.bounds.size.width;
+    
+	//TODO: Layout
+    CGFloat labelHeight = [label sizeThatFits:CGSizeMake(width, 1000)].height;
+    CGFloat buttonHeight = [button sizeThatFits:CGSizeMake(width, 1000)].height;
+    CGFloat topoffset = 150;
+    CGFloat padding = 20;
+    
+    label.frame = CGRectMake(0, topoffset, width, labelHeight);
+    button.frame = CGRectMake(0, topoffset + labelHeight + padding, width, buttonHeight);
+    
+    UIView* footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, labelHeight + buttonHeight + topoffset + padding)];
+    [footer addSubview:label];
+    [footer addSubview:button];
+    
+    self.tableView.tableFooterView = footer;
+}
+
 - (void)viewDidLoad
 {
     [super viewDidLoad];
@@ -50,8 +114,6 @@ static NSString * const CollectionCellReuseIdentifier = @"CollectionCell";
     {
         self.navigationItem.prompt = self.picker.customNavigationBarPrompt;
     }
-    
-    self.imageManager = [[PHCachingImageManager alloc] init];
     
     //Table view aspect
     self.tableView.rowHeight = kAlbumRowHeight;
@@ -83,17 +145,25 @@ static NSString * const CollectionCellReuseIdentifier = @"CollectionCell";
         self.title = NSLocalizedStringFromTableInBundle(@"picker.navigation.title",  @"GMImagePicker", [NSBundle bundleForClass:GMImagePickerController.class], @"Navigation bar default title");
     else
         self.title = self.picker.title;
+
+    if([PHPhotoLibrary authorizationStatus] == PHAuthorizationStatusAuthorized)
+    {
+        [self accessGranted];
+    }
+    else if([PHPhotoLibrary authorizationStatus] == PHAuthorizationStatusNotDetermined)
+    {
+        [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus status) {
+            if(status == PHAuthorizationStatusAuthorized)
+                [self accessGranted];
+            else
+                [self authorizationWarning];
+        }];
+    }
+    else
+    {
+        [self authorizationWarning];
+    }
     
-    //Fetch PHAssetCollections:
-    PHFetchResult *topLevelUserCollections = [PHCollectionList fetchTopLevelUserCollectionsWithOptions:nil];
-    PHFetchResult *smartAlbums = [PHAssetCollection fetchAssetCollectionsWithType:PHAssetCollectionTypeSmartAlbum subtype:PHAssetCollectionSubtypeAlbumRegular options:nil];
-    self.collectionsFetchResults = @[topLevelUserCollections, smartAlbums];
-    self.collectionsLocalizedTitles = @[NSLocalizedStringFromTableInBundle(@"picker.table.user-albums-header",  @"GMImagePicker", [NSBundle bundleForClass:GMImagePickerController.class], @"Albums"), NSLocalizedStringFromTableInBundle(@"picker.table.smart-albums-header",  @"GMImagePicker", [NSBundle bundleForClass:GMImagePickerController.class], @"Smart Albums")];
-    
-    [self updateFetchResults];
-    
-    //Register for changes
-    [[PHPhotoLibrary sharedPhotoLibrary] registerChangeObserver:self];
 }
 
 - (void)dealloc
